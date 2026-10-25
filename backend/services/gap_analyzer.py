@@ -1,18 +1,23 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from data.career_benchmarks import CAREER_ROLES
 
 class SkillGapAnalyzer:
-    def analyze(self, user_skills: List[str], target_role_id: str) -> Dict[str, Any]:
+    def analyze(self, user_skills: List[str], target_role_id: str, verified_skills: Optional[List[str]] = None) -> Dict[str, Any]:
         if target_role_id not in CAREER_ROLES:
             target_role_id = "ai_ml_engineer"
             
         role = CAREER_ROLES[target_role_id]
         user_skills_set = set(s.strip().lower() for s in user_skills)
+        verified_set = set(s.strip().lower() for s in (verified_skills or []))
 
         # Helper to check matching
         def is_mastered(skill_name: str) -> bool:
             s_low = skill_name.lower()
             return any(s_low == u or s_low in u or u in s_low for u in user_skills_set)
+
+        def is_verified(skill_name: str) -> bool:
+            s_low = skill_name.lower()
+            return any(s_low == v or s_low in v or v in s_low for v in verified_set)
 
         # Analyze Core Skills
         mastered_core = []
@@ -24,10 +29,12 @@ class SkillGapAnalyzer:
             w = skill.get("weight", 1.0)
             core_max_score += w
             if is_mastered(skill["name"]):
-                mastered_core.append(skill)
-                core_weighted_score += w
+                ver = is_verified(skill["name"])
+                earned = w * (1.15 if ver else 1.0)
+                mastered_core.append({**skill, "verified": ver})
+                core_weighted_score += min(w, earned)
             else:
-                missing_core.append(skill)
+                missing_core.append({**skill, "verified": False})
 
         # Analyze Advanced Skills
         mastered_adv = []
@@ -39,10 +46,12 @@ class SkillGapAnalyzer:
             w = skill.get("weight", 0.8)
             adv_max_score += w
             if is_mastered(skill["name"]):
-                mastered_adv.append(skill)
-                adv_weighted_score += w
+                ver = is_verified(skill["name"])
+                earned = w * (1.15 if ver else 1.0)
+                mastered_adv.append({**skill, "verified": ver})
+                adv_weighted_score += min(w, earned)
             else:
-                missing_adv.append(skill)
+                missing_adv.append({**skill, "verified": False})
 
         # Analyze Tools
         mastered_tools = []
@@ -54,17 +63,24 @@ class SkillGapAnalyzer:
             w = skill.get("weight", 0.7)
             tool_max_score += w
             if is_mastered(skill["name"]):
-                mastered_tools.append(skill)
-                tool_weighted_score += w
+                ver = is_verified(skill["name"])
+                earned = w * (1.15 if ver else 1.0)
+                mastered_tools.append({**skill, "verified": ver})
+                tool_weighted_score += min(w, earned)
             else:
-                missing_tools.append(skill)
+                missing_tools.append({**skill, "verified": False})
 
         # Total Weighted Readiness Score
         total_earned = (core_weighted_score * 0.55) + (adv_weighted_score * 0.30) + (tool_weighted_score * 0.15)
         total_possible = (core_max_score * 0.55) + (adv_max_score * 0.30) + (tool_max_score * 0.15)
         
-        match_score = round((total_earned / total_possible) * 100) if total_possible > 0 else 0
-        match_score = max(5, min(98, match_score)) if user_skills else 0
+        # Boost bonus for verified skills
+        verified_count = sum(1 for s in (mastered_core + mastered_adv + mastered_tools) if s.get("verified"))
+        verification_boost = min(12, verified_count * 2)
+
+        raw_score = (total_earned / total_possible) * 100 if total_possible > 0 else 0
+        match_score = round(raw_score + (verification_boost if raw_score > 0 else 0))
+        match_score = max(5, min(99, match_score)) if user_skills else 0
 
         # Category scores
         core_readiness = round((core_weighted_score / core_max_score) * 100) if core_max_score > 0 else 0

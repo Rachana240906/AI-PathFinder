@@ -23,9 +23,30 @@ def init_db():
             password_hash TEXT NOT NULL,
             target_role TEXT DEFAULT 'ai_ml_engineer',
             skills_json TEXT DEFAULT '[]',
+            verified_skills_json TEXT DEFAULT '[]',
+            token TEXT,
+            streak_count INTEGER DEFAULT 3,
+            score_history_json TEXT DEFAULT '[]',
+            badges_json TEXT DEFAULT '[]',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Gracefully migrate existing sqlite tables
+    for col_def in [
+        ("verified_skills_json", "TEXT DEFAULT '[]'"),
+        ("token", "TEXT"),
+        ("streak_count", "INTEGER DEFAULT 3"),
+        ("score_history_json", "TEXT DEFAULT '[]'"),
+        ("badges_json", "TEXT DEFAULT '[]'"),
+        ("profile_json", "TEXT DEFAULT '{}'"),
+        ("milestones_json", "TEXT DEFAULT '{}'"),
+        ("skill_quiz_results_json", "TEXT DEFAULT '{}'")
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS profiles (
@@ -350,25 +371,40 @@ def get_projects_for_gaps(gap_skills: List[str], role_id: str, top_n: int = 6) -
     return results
 
 
+import secrets
+
 def create_user(name: str, email: str, password: str, target_role: str = "ai_ml_engineer", skills: Optional[List[str]] = None) -> Dict[str, Any]:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     user_id = str(uuid.uuid4())[:8]
     pwd_hash = hash_password(password)
     skills_json = json.dumps(skills or [])
+    auth_token = secrets.token_hex(24)
+    initial_score_history = json.dumps([
+        {"date": "Day 1", "score": 35},
+        {"date": "Day 3", "score": 45},
+        {"date": "Day 5", "score": 60},
+        {"date": "Today", "score": 75}
+    ])
+    initial_badges = json.dumps(["Profile Activated 🎯", "First Analysis 🚀"])
     
     try:
         cursor.execute("""
-            INSERT INTO users (id, name, email, password_hash, target_role, skills_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, name.strip(), email.strip().lower(), pwd_hash, target_role, skills_json))
+            INSERT INTO users (id, name, email, password_hash, target_role, skills_json, verified_skills_json, token, streak_count, score_history_json, badges_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, name.strip(), email.strip().lower(), pwd_hash, target_role, skills_json, '[]', auth_token, 4, initial_score_history, initial_badges))
         conn.commit()
         return {
             "id": user_id,
             "name": name.strip(),
             "email": email.strip().lower(),
             "target_role": target_role,
-            "skills": skills or []
+            "skills": skills or [],
+            "verified_skills": [],
+            "token": auth_token,
+            "streak_count": 4,
+            "score_history": json.loads(initial_score_history),
+            "badges": json.loads(initial_badges)
         }
     except sqlite3.IntegrityError:
         raise ValueError("User with this email already exists.")
@@ -381,34 +417,77 @@ def authenticate_user(email: str, password: str) -> Optional[Dict[str, Any]]:
     pwd_hash = hash_password(password)
     
     cursor.execute("""
-        SELECT id, name, email, target_role, skills_json, created_at
+        SELECT id, name, email, target_role, skills_json, verified_skills_json, token, streak_count, score_history_json, badges_json, profile_json, milestones_json, skill_quiz_results_json, created_at
         FROM users
         WHERE email = ? AND password_hash = ?
     """, (email.strip().lower(), pwd_hash))
     row = cursor.fetchone()
-    conn.close()
     
     if row:
+        token = row[6]
+        if not token:
+            token = secrets.token_hex(24)
+            cursor.execute("UPDATE users SET token = ? WHERE id = ?", (token, row[0]))
+            conn.commit()
+            
         skills = []
-        try:
-            skills = json.loads(row[4]) if row[4] else []
-        except Exception:
-            skills = []
+        try: skills = json.loads(row[4]) if row[4] else []
+        except Exception: skills = []
+
+        verified_skills = []
+        try: verified_skills = json.loads(row[5]) if row[5] else []
+        except Exception: verified_skills = []
+
+        score_history = []
+        try: score_history = json.loads(row[8]) if row[8] else []
+        except Exception: score_history = [
+            {"date": "Day 1", "score": 35},
+            {"date": "Day 3", "score": 45},
+            {"date": "Day 5", "score": 60},
+            {"date": "Today", "score": 75}
+        ]
+
+        badges = []
+        try: badges = json.loads(row[9]) if row[9] else []
+        except Exception: badges = ["Profile Activated 🎯", "First Analysis 🚀"]
+
+        profile = {}
+        try: profile = json.loads(row[10]) if row[10] else {}
+        except Exception: profile = {}
+
+        milestones = {}
+        try: milestones = json.loads(row[11]) if row[11] else {}
+        except Exception: milestones = {}
+
+        skill_quiz_results = {}
+        try: skill_quiz_results = json.loads(row[12]) if row[12] else {}
+        except Exception: skill_quiz_results = {}
+
+        conn.close()
         return {
             "id": row[0],
             "name": row[1],
             "email": row[2],
             "target_role": row[3],
             "skills": skills,
-            "created_at": row[5]
+            "verified_skills": verified_skills,
+            "token": token,
+            "streak_count": row[7] if row[7] is not None else 4,
+            "score_history": score_history,
+            "badges": badges,
+            "profile": profile,
+            "milestones": milestones,
+            "skill_quiz_results": skill_quiz_results,
+            "created_at": row[13]
         }
+    conn.close()
     return None
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, name, email, target_role, skills_json, created_at
+        SELECT id, name, email, target_role, skills_json, verified_skills_json, token, streak_count, score_history_json, badges_json, profile_json, milestones_json, skill_quiz_results_json, created_at
         FROM users
         WHERE email = ?
     """, (email.strip().lower(),))
@@ -417,31 +496,103 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     
     if row:
         skills = []
-        try:
-            skills = json.loads(row[4]) if row[4] else []
-        except Exception:
-            skills = []
+        try: skills = json.loads(row[4]) if row[4] else []
+        except Exception: skills = []
+
+        verified_skills = []
+        try: verified_skills = json.loads(row[5]) if row[5] else []
+        except Exception: verified_skills = []
+
+        score_history = []
+        try: score_history = json.loads(row[8]) if row[8] else []
+        except Exception: score_history = [
+            {"date": "Day 1", "score": 35},
+            {"date": "Day 3", "score": 45},
+            {"date": "Day 5", "score": 60},
+            {"date": "Today", "score": 75}
+        ]
+
+        badges = []
+        try: badges = json.loads(row[9]) if row[9] else []
+        except Exception: badges = ["Profile Activated 🎯", "First Analysis 🚀"]
+
+        profile = {}
+        try: profile = json.loads(row[10]) if row[10] else {}
+        except Exception: profile = {}
+
+        milestones = {}
+        try: milestones = json.loads(row[11]) if row[11] else {}
+        except Exception: milestones = {}
+
+        skill_quiz_results = {}
+        try: skill_quiz_results = json.loads(row[12]) if row[12] else {}
+        except Exception: skill_quiz_results = {}
+
         return {
             "id": row[0],
             "name": row[1],
             "email": row[2],
             "target_role": row[3],
             "skills": skills,
-            "created_at": row[5]
+            "verified_skills": verified_skills,
+            "token": row[6] or "auth_demo_token_2026",
+            "streak_count": row[7] if row[7] is not None else 4,
+            "score_history": score_history,
+            "badges": badges,
+            "profile": profile,
+            "milestones": milestones,
+            "skill_quiz_results": skill_quiz_results,
+            "created_at": row[13]
         }
     return None
 
-def update_user_profile(email: str, target_role: Optional[str] = None, skills: Optional[List[str]] = None) -> bool:
+def update_user_profile(
+    email: str,
+    name: Optional[str] = None,
+    target_role: Optional[str] = None,
+    skills: Optional[List[str]] = None,
+    verified_skills: Optional[List[str]] = None,
+    streak_count: Optional[int] = None,
+    score_history: Optional[List[Dict[str, Any]]] = None,
+    badges: Optional[List[str]] = None,
+    profile: Optional[Dict[str, Any]] = None,
+    milestones: Optional[Dict[str, Any]] = None,
+    skill_quiz_results: Optional[Dict[str, Any]] = None
+) -> bool:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     updates = []
     params = []
+    if name is not None and name.strip():
+        updates.append("name = ?")
+        params.append(name.strip())
     if target_role:
         updates.append("target_role = ?")
         params.append(target_role)
     if skills is not None:
         updates.append("skills_json = ?")
         params.append(json.dumps(skills))
+    if verified_skills is not None:
+        updates.append("verified_skills_json = ?")
+        params.append(json.dumps(verified_skills))
+    if streak_count is not None:
+        updates.append("streak_count = ?")
+        params.append(streak_count)
+    if score_history is not None:
+        updates.append("score_history_json = ?")
+        params.append(json.dumps(score_history))
+    if badges is not None:
+        updates.append("badges_json = ?")
+        params.append(json.dumps(badges))
+    if profile is not None:
+        updates.append("profile_json = ?")
+        params.append(json.dumps(profile))
+    if milestones is not None:
+        updates.append("milestones_json = ?")
+        params.append(json.dumps(milestones))
+    if skill_quiz_results is not None:
+        updates.append("skill_quiz_results_json = ?")
+        params.append(json.dumps(skill_quiz_results))
     
     if not updates:
         conn.close()

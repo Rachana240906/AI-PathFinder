@@ -1,18 +1,37 @@
 from typing import Dict, List, Any
 
 class RoadmapGenerator:
-    def generate(self, gap_result: Dict[str, Any], user_skills: List[str]) -> Dict[str, Any]:
+    def generate(self, gap_result: Dict[str, Any], user_skills: List[str], hours_per_week: int = 10, duration_weeks: int = 12) -> Dict[str, Any]:
         role_title = gap_result.get("role_title", "Software Engineer")
         missing_core = [s["name"] for s in gap_result.get("missing_core_skills", [])]
         missing_adv = [s["name"] for s in gap_result.get("missing_advanced_skills", [])]
         missing_tools = [s["name"] for s in gap_result.get("missing_tools", [])]
+
+        hours_per_week = max(4, min(40, hours_per_week))
+        duration_weeks = 6 if duration_weeks <= 6 else (24 if duration_weeks >= 20 else 12)
+
+        if duration_weeks == 6:
+            p1_dur = "Weeks 1 - 2"
+            p2_dur = "Weeks 3 - 4"
+            p3_dur = "Week 5"
+            p4_dur = "Week 6"
+        elif duration_weeks == 24:
+            p1_dur = "Weeks 1 - 6"
+            p2_dur = "Weeks 7 - 12"
+            p3_dur = "Weeks 13 - 18"
+            p4_dur = "Weeks 19 - 24"
+        else:
+            p1_dur = "Weeks 1 - 3"
+            p2_dur = "Weeks 4 - 6"
+            p3_dur = "Weeks 7 - 9"
+            p4_dur = "Weeks 10 - 12"
 
         # Phase 1: Foundational Core Bridging
         p1_skills = missing_core[:2] if missing_core else ["Advanced Problem Solving", "Code Architecture"]
         phase_1 = {
             "phase_id": 1,
             "title": "Phase 1: Core Competency & Foundational Bridging",
-            "duration": "Weeks 1 - 3",
+            "duration": p1_dur,
             "focus": f"Bridge essential missing skills: {', '.join(p1_skills)}",
             "milestone_goal": "Establish working proficiency with foundational concepts and basic implementation patterns.",
             "topics": [
@@ -31,7 +50,7 @@ class RoadmapGenerator:
         phase_2 = {
             "phase_id": 2,
             "title": "Phase 2: Framework Mastery & Microservice Architecture",
-            "duration": "Weeks 4 - 6",
+            "duration": p2_dur,
             "focus": f"Hands-on integration with {', '.join(p2_skills)}",
             "milestone_goal": "Develop production-ready modules with proper data validation and error handling.",
             "topics": [
@@ -52,7 +71,7 @@ class RoadmapGenerator:
         phase_3 = {
             "phase_id": 3,
             "title": "Phase 3: Advanced Features & Capstone Engineering",
-            "duration": "Weeks 7 - 9",
+            "duration": p3_dur,
             "focus": f"Master {', '.join(p3_skills)} through an industry-grade capstone",
             "milestone_goal": "Complete an impressive end-to-end portfolio project solving a real-world problem.",
             "topics": [
@@ -69,7 +88,7 @@ class RoadmapGenerator:
         phase_4 = {
             "phase_id": 4,
             "title": "Phase 4: Cloud Deployment, Open Source & Job Readiness",
-            "duration": "Weeks 10 - 12",
+            "duration": p4_dur,
             "focus": "Containerization, Cloud CI/CD deployment, and technical interview preparation",
             "milestone_goal": "Deploy live applications, publish verified GitHub repositories, and mock interview practice.",
             "topics": [
@@ -100,7 +119,10 @@ class RoadmapGenerator:
             "target_role": role_title,
             "match_score": gap_result.get("match_score", 0),
             "readiness_tier": gap_result.get("readiness_tier", "In Progress"),
-            "total_estimated_weeks": 12,
+            "total_estimated_weeks": duration_weeks,
+            "hours_per_week": hours_per_week,
+            "daily_target_hours": round(hours_per_week / 7, 1),
+            "total_study_hours": hours_per_week * duration_weeks,
             "skills_present": mastered_skills,
             "skills_to_add": all_missing,
             "phases": [phase_1, phase_2, phase_3, phase_4]

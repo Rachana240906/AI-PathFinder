@@ -84,22 +84,12 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-@keyframes upload-spotlight {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.7), 0 4px 14px rgba(5, 150, 105, 0.35);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(5, 150, 105, 0.25), 0 6px 20px rgba(5, 150, 105, 0.5);
-    transform: scale(1.04);
-  }
-}
 
 .animate-fade-up   { animation: fade-up 0.35s ease both; }
 .animate-fade-in   { animation: fade-in 0.25s ease both; }
 .animate-pulse-glow { animation: pulse-glow 2s infinite; }
 .animate-spin-slow  { animation: spin-slow 8s linear infinite; }
-.animate-upload-highlight { animation: upload-spotlight 1.1s ease-in-out infinite; }
+
 
 /* Stagger animation delays */
 .delay-50  { animation-delay: 50ms; }
